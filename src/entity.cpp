@@ -11010,6 +11010,14 @@ void Entity::attack(int pose, int charge, Entity* target)
 				|| itemIsThrowableTinkerTool(myStats->weapon)
 				|| myStats->weapon->type == TOOL_DUCK )
 			{
+				// MOD: block players from throwing items in the start hub/lobby. Thrown weapons/potions
+				// otherwise land on the ground and survive a respec (which wipes carried items), letting
+				// players stockpile them — the same exploit the dropItem block closes.
+				if ( behavior == &actPlayer && currentlevel == 0 && !secretlevel )
+				{
+					messagePlayer(skill[2], MESSAGE_INTERACTION, "You can't throw items here.");
+					return;
+				}
 				bool drankPotion = false;
 				if ( behavior == &actMonster && myStats->type == GOATMAN && itemCategory(myStats->weapon) == POTION )
 				{
