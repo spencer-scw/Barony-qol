@@ -394,12 +394,10 @@ std::string SteamServerClientWrapper::requestAuthTicket()
 
 	consumeAuthTicket();
 
-#if defined(LINUX) || defined(APPLE)
-    // TODO update steamworks SDK for linux and mac
-    authTicketHandle = SteamUser()->GetAuthSessionTicket(rgubTicket, sizeof(rgubTicket), &cubTicket);
-#else
+    // MOD: Steamworks SDK 1.58+ removed the old 3-arg GetAuthSessionTicket; the 4-arg form
+    // (with a networking-identity pointer) is now the only overload on all platforms. Passing
+    // nullptr matches the previous Windows behavior.
     authTicketHandle = SteamUser()->GetAuthSessionTicket(rgubTicket, sizeof(rgubTicket), &cubTicket, nullptr);
-#endif
  
 	if ( authTicketHandle )
 	{

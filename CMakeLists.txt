@@ -366,6 +366,15 @@ if (STEAMWORKS_ENABLED)
   find_package(NFD REQUIRED)
   INCLUDE_DIRECTORIES(${NFD_INCLUDE_DIR})
   LINK_DIRECTORIES(${NFD_LIBRARY})
+  # MOD: NFD's Linux backend is built against GTK3, so the final link needs GTK/glib libs (else
+  # undefined references like g_free). Append them to NFD_LIBRARY so every target that links NFD
+  # picks them up. Not needed on Windows (uses the Win32 dialog) or macOS (Cocoa).
+  if (NOT WIN32 AND NOT APPLE)
+    find_package(PkgConfig REQUIRED)
+    pkg_check_modules(GTK3 REQUIRED gtk+-3.0)
+    link_directories(${GTK3_LIBRARY_DIRS})
+    list(APPEND NFD_LIBRARY ${GTK3_LIBRARIES})
+  endif()
 ENDIF (STEAMWORKS_ENABLED)
 
 INCLUDE_DIRECTORIES(${SDL2_INCLUDE_DIRS} ${SDL2_INCLUDE_DIR} ${SDL2IMAGE_INCLUDE_DIRS} ${SDL2_IMAGE_INCLUDE_DIR} ${SDL2NET_INCLUDE_DIR} ${SDL2_NET_INCLUDE_DIRS} ${SDL2TTF_INCLUDE_DIR}  ${SDL2_TTF_INCLUDE_DIRS} ${PHYSFS_INCLUDE_DIR})
