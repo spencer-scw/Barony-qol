@@ -384,8 +384,10 @@ ENDIF (STEAMWORKS_ENABLED)
 # MOD: GLEW is used only on Windows (see src/main.hpp `#ifdef WINDOWS`). Upstream links it via the
 # checked-in Visual Studio solution, not CMake, so wire it up for the CMake+MSVC build here.
 if (WIN32)
+  # NOTE: uses the repo's cmake/Modules/FindGLEW.cmake, which sets GLEW_INCLUDE_DIR / GLEW_LIBRARIES
+  # (not an imported GLEW::GLEW target). It locates vcpkg's glew via CMAKE_PREFIX_PATH.
   find_package(GLEW REQUIRED)
-  include_directories(${GLEW_INCLUDE_DIRS})
+  include_directories(${GLEW_INCLUDE_DIR})
 endif()
 
 INCLUDE_DIRECTORIES(${SDL2_INCLUDE_DIRS} ${SDL2_INCLUDE_DIR} ${SDL2IMAGE_INCLUDE_DIRS} ${SDL2_IMAGE_INCLUDE_DIR} ${SDL2NET_INCLUDE_DIR} ${SDL2_NET_INCLUDE_DIRS} ${SDL2TTF_INCLUDE_DIR}  ${SDL2_TTF_INCLUDE_DIRS} ${PHYSFS_INCLUDE_DIR})
@@ -577,7 +579,7 @@ if (GAME_ENABLED)
 	endif()
 	target_link_libraries(barony ${SDL2_LIBRARIES} ${SDL2_LIBRARY} ${SDL2IMAGE_LIBRARIES} ${SDL2_IMAGE_LIBRARIES} ${SDL2_NET_LIBRARIES} ${SDL2_TTF_LIBRARIES} ${SDL2TTF_LIBRARY})
 	# MOD: Windows needs GLEW + the system OpenGL libs (not linked elsewhere for the CMake build).
-	target_link_libraries(barony GLEW::GLEW opengl32 glu32)
+	target_link_libraries(barony ${GLEW_LIBRARIES} opengl32 glu32)
 	if (STEAMWORKS_ENABLED)
 		target_link_libraries(barony ${STEAMWORKS_LIBRARY})
 		target_link_libraries(barony ${NFD_LIBRARY})
