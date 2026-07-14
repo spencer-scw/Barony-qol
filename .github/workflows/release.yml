@@ -95,7 +95,7 @@ jobs:
           # Note: classic NFD is no longer a vcpkg port (only the API-incompatible *extended* fork),
           # so it is built from source in the next step instead.
           vcpkg install --triplet x64-windows \
-            sdl2 sdl2-image sdl2-net sdl2-ttf physfs rapidjson libpng zlib
+            sdl2 sdl2-image sdl2-net sdl2-ttf physfs rapidjson libpng zlib glew
 
       - name: Build NFD (Native File Dialog) from source
         shell: bash
@@ -154,7 +154,8 @@ jobs:
             -DVCPKG_TARGET_TRIPLET=x64-windows \
             -DCMAKE_CXX_FLAGS="-I$WINSHIM" -DCMAKE_C_FLAGS="-I$WINSHIM" \
             -A x64 ..
-          cmake --build . --config Release -j
+          # Only the game is shipped; skip the editor target (not needed for the mod release).
+          cmake --build . --config Release -j --target barony
 
       - name: Stage release artifact
         shell: bash
