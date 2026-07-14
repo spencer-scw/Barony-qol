@@ -92,12 +92,22 @@ test the build without publishing a release.
 
 ## What your friends do
 
-Download the binary for their OS from the Release and drop it into their existing **Steam** Barony
-install (replace or rename the original `barony` / `barony.exe`), then launch through Steam as normal.
-Their install already provides the FMOD + Steam runtime libraries, `steam_appid.txt`, and all game
-data, so the release ships only the executable. Everyone playing together must run the **same** modded
-build — multiplayer is gated on the version string (`v5.0.2-qol`), so modded and vanilla clients won't
-mix.
+Download the files for their OS from the Release and drop them into their existing **Steam** Barony
+install (back up the originals first):
+- Linux: `barony` + `libsteam_api.so`
+- Windows: `barony.exe` + `steam_api64.dll`
+
+The retail install already provides FMOD (`libfmod.so.13`), `steam_appid.txt`, and all game data. The
+one thing it does **not** provide is a new-enough Steamworks runtime lib: the mod links a newer SDK,
+so the bundled `libsteam_api.so` / `steam_api64.dll` must sit next to the executable (otherwise
+`SteamAPI_Init` fails at runtime with an undefined `SteamInternal_SteamAPI_Init` symbol). The newer
+lib stays backward-compatible with the original game.
+
+On **Linux**, run the binary directly (`./barony` from the install dir, with Steam running) rather
+than via Steam's Play button — this uses the system libraries instead of the Steam Linux Runtime
+container (whose older glibc can reject the build). Needs system SDL2/SDL2_image/SDL2_net/SDL2_ttf,
+GTK3, and OpenGL. Everyone playing together must run the **same** modded build — multiplayer is gated
+on the version string (`v5.0.2-qol`), so modded and vanilla clients won't mix.
 
 ## Notes / first-run caveats
 
