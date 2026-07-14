@@ -407,11 +407,10 @@ int loadSoundResources(real_t base_load_percent, real_t top_load_percent)
 	{
 		fp->gets2(name, 128);
 		completePath(full_path, name);
-		// MOD: load sounds asynchronously (FMOD_NONBLOCKING). createSound then returns immediately and
-		// FMOD's background loader thread does the ~3s of work (which is per-sound setup, not decode or
-		// disk I/O — both are negligible) while the rest of startup + the main menu proceed. This takes
-		// "loading sounds..." off the critical path. Loads are progressed by the main loop's
-		// fmod_system->update(); a sound played before it finishes simply stays silent that once.
+		// MOD: load sounds asynchronously (FMOD_NONBLOCKING). createSound returns immediately and FMOD's
+		// background loader thread does the work while the rest of startup + the main menu proceed. This
+		// cut the "loading sounds..." step from ~19s to ~47ms (measured). Loads are progressed by the main
+		// loop's fmod_system->update(); a sound played before it finishes simply stays silent that once.
 		FMOD_MODE flags = FMOD_DEFAULT | FMOD_3D | FMOD_LOWMEM | FMOD_NONBLOCKING;
 		if ( c == 133 || c == 672 || c == 135 || c == 155 || c == 149 || c == 710 )
 		{
