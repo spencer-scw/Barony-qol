@@ -14,6 +14,9 @@ on:
 jobs:
   # This workflow contains a single job called "build"
   build:
+    # Only runs on the upstream repo — the fork lacks the encrypted-dependencies secrets this needs.
+    # Fork release builds are handled by release.yml (see CI_SETUP.md).
+    if: github.repository == 'TurningWheel/Barony'
     # The type of runner that the job will run on
     runs-on: ubuntu-22.04
 
