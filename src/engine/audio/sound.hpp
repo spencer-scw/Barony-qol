@@ -16,6 +16,12 @@
 #include <stdio.h>
 #ifdef USE_FMOD
 #include <fmod.hpp>
+// MOD: FMOD 2.03 removed the F_CALLBACK macro (calling-convention alias); 2.02 defined it as
+// `#define F_CALLBACK F_CALL`. Barony's audio callbacks are declared with F_CALLBACK, so restore it
+// for newer SDKs. No-op on 2.02 where it's already defined.
+#ifndef F_CALLBACK
+#define F_CALLBACK F_CALL
+#endif
 #endif
 #ifdef USE_OPENAL
 #ifdef APPLE
