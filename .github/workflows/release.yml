@@ -92,8 +92,27 @@ jobs:
       - name: Install open-source dependencies (vcpkg)
         shell: bash
         run: |
+          # Note: classic NFD is no longer a vcpkg port (only the API-incompatible *extended* fork),
+          # so it is built from source in the next step instead.
           vcpkg install --triplet x64-windows \
-            sdl2 sdl2-image sdl2-net sdl2-ttf physfs rapidjson libpng zlib nativefiledialog
+            sdl2 sdl2-image sdl2-net sdl2-ttf physfs rapidjson libpng zlib
+
+      - name: Build NFD (Native File Dialog) from source
+        shell: bash
+        run: |
+          git clone --depth 1 https://github.com/mlabbe/nativefiledialog.git nfd-src
+          # Minimal CMake wrapper builds just the classic static lib (Windows backend uses COM).
+          cat > nfd-src/CMakeLists.txt <<'CM'
+          cmake_minimum_required(VERSION 3.10)
+          project(nfd C CXX)
+          add_library(nfd STATIC src/nfd_common.c src/nfd_win.cpp)
+          target_include_directories(nfd PUBLIC src/include PRIVATE src)
+          CM
+          cmake -S nfd-src -B nfd-build -A x64
+          cmake --build nfd-build --config Release
+          mkdir -p "$GITHUB_WORKSPACE/deps/nfd/include" "$GITHUB_WORKSPACE/deps/nfd/lib"
+          cp nfd-src/src/include/nfd.h "$GITHUB_WORKSPACE/deps/nfd/include/"
+          cp nfd-build/Release/nfd.lib "$GITHUB_WORKSPACE/deps/nfd/lib/"
 
       - name: Fetch + decrypt proprietary SDK bundle (FMOD + Steamworks)
         shell: bash
@@ -108,8 +127,8 @@ jobs:
           curl -fsSL "$DEPS_URL" -o deps.zip.enc
           openssl aes-256-ctr -d -in deps.zip.enc -out deps.zip -K "$DEPS_KEY" -iv "$DEPS_IV"
           unzip -q deps.zip -d "$GITHUB_WORKSPACE/deps"
-          # Windows needs deps/steamworks_sdk/sdk/redistributable_bin/win64/steam_api64.lib
-          # and deps/fmod/api/core/lib/x64/fmod_vc.lib (see CI_SETUP.md).
+          # Windows uses deps/steamworks_sdk/sdk/redistributable_bin/win64/steam_api64.lib
+          # and deps/fmod-win/api/core/lib/x86_64/fmod_vc.lib (see CI_SETUP.md).
 
       - name: Configure + build (MSVC)
         shell: bash
@@ -117,6 +136,7 @@ jobs:
           STEAMWORKS_ENABLED: 1
           STEAMWORKS_ROOT: ${{ github.workspace }}/deps/steamworks_sdk
           FMOD_DIR: ${{ github.workspace }}/deps/fmod-win
+          NFD_DIR: ${{ github.workspace }}/deps/nfd
         run: |
           mkdir -p build && cd build
           cmake -DCMAKE_BUILD_TYPE=Release -DFMOD_ENABLED=ON \
