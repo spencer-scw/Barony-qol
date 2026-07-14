@@ -75,13 +75,16 @@ jobs:
         run: |
           mkdir -p out
           cp build/release/barony out/barony
-        # Note: friends drop this into their existing Steam Barony install, which already provides
-        # libfmod.so, libsteam_api.so, steam_appid.txt and all game data — so we ship only the binary.
+          # We build against a newer Steamworks SDK than the retail game ships, so its SteamAPI_Init
+          # needs the matching libsteam_api.so (retail's is too old — undefined SteamInternal_SteamAPI_Init).
+          # Ship it alongside; friends drop it next to the binary. (FMOD's libfmod.so.13 in the retail
+          # install is ABI-compatible, so it is not shipped.)
+          cp "$GITHUB_WORKSPACE/deps/steamworks_sdk/sdk/redistributable_bin/linux64/libsteam_api.so" out/
 
       - uses: actions/upload-artifact@v4
         with:
           name: barony-linux
-          path: out/barony
+          path: out
 
   # ---------------------------------------------------------------------------
   windows:
@@ -162,11 +165,13 @@ jobs:
         run: |
           mkdir -p out
           cp build/Release/barony.exe out/barony.exe
+          # Ship the matching Steamworks runtime DLL (retail's is older than our build's SDK).
+          cp "$GITHUB_WORKSPACE/deps/steamworks_sdk/sdk/redistributable_bin/win64/steam_api64.dll" out/
 
       - uses: actions/upload-artifact@v4
         with:
           name: barony-windows
-          path: out/barony.exe
+          path: out
 
   # ---------------------------------------------------------------------------
   release:
@@ -181,19 +186,29 @@ jobs:
       - name: Assemble release files
         run: |
           mkdir -p release
-          cp artifacts/barony-linux/barony   release/barony
-          cp artifacts/barony-windows/barony.exe release/barony.exe
+          cp artifacts/barony-linux/barony          release/barony
+          cp artifacts/barony-linux/libsteam_api.so release/libsteam_api.so
+          cp artifacts/barony-windows/barony.exe     release/barony.exe
+          cp artifacts/barony-windows/steam_api64.dll release/steam_api64.dll
 
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           files: |
             release/barony
+            release/libsteam_api.so
             release/barony.exe
+            release/steam_api64.dll
           body: |
             Barony QOL mod build for tag ${{ github.ref_name }}.
 
-            **How to use:** drop the executable for your OS into your existing Steam Barony
-            install directory (replacing/renaming the original `barony`/`barony.exe`), then launch
-            through Steam as usual. You must own Barony on Steam. Everyone playing together must run
+            **How to use:** drop the two files for your OS into your existing Steam Barony install
+            directory (back up the originals first):
+            - Linux: `barony` (run it directly, as `./barony`) and `libsteam_api.so`
+            - Windows: `barony.exe` and `steam_api64.dll`
+
+            The modded build links a newer Steamworks SDK than retail, so the matching
+            `libsteam_api.so` / `steam_api64.dll` must sit next to the executable (it stays
+            backward-compatible with the original game). You must own Barony on Steam. Everyone
+            playing together must run
             the same modded build (multiplayer is version-gated).
