@@ -55,10 +55,6 @@ bool initSoundEngine()
 	FMOD_ADVANCEDSETTINGS settings{};
 	settings.cbSize = sizeof(FMOD_ADVANCEDSETTINGS);
 	settings.vol0virtualvol = 0.001;
-	// MOD: sounds are loaded as compressed samples (see loadSoundResources) to slash load time and
-	// memory; give the runtime Vorbis-decoder pool headroom so no simultaneous SFX are dropped
-	// (>= the 32 software channels below).
-	settings.maxVorbisCodecs = 64;
 	fmod_system->setAdvancedSettings(&settings);
 
 	// default 64
@@ -411,10 +407,12 @@ int loadSoundResources(real_t base_load_percent, real_t top_load_percent)
 	{
 		fp->gets2(name, 128);
 		completePath(full_path, name);
-		// MOD: FMOD_CREATECOMPRESSEDSAMPLE keeps the OGG/Vorbis data compressed in memory and decodes
-		// on playback, instead of decoding all 859 sounds to PCM up front (FMOD_DEFAULT == CREATESAMPLE).
-		// This is the bulk of the "loading sounds..." time and of the audio memory footprint.
-		FMOD_MODE flags = FMOD_DEFAULT | FMOD_3D | FMOD_LOWMEM | FMOD_CREATECOMPRESSEDSAMPLE;
+		// MOD: load sounds asynchronously (FMOD_NONBLOCKING). createSound then returns immediately and
+		// FMOD's background loader thread does the ~3s of work (which is per-sound setup, not decode or
+		// disk I/O — both are negligible) while the rest of startup + the main menu proceed. This takes
+		// "loading sounds..." off the critical path. Loads are progressed by the main loop's
+		// fmod_system->update(); a sound played before it finishes simply stays silent that once.
+		FMOD_MODE flags = FMOD_DEFAULT | FMOD_3D | FMOD_LOWMEM | FMOD_NONBLOCKING;
 		if ( c == 133 || c == 672 || c == 135 || c == 155 || c == 149 || c == 710 )
 		{
 			flags |= FMOD_LOOP_NORMAL;
