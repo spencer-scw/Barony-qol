@@ -27,7 +27,10 @@
 #ifdef NINTENDO
 static const char VERSION[] = "v5.0.2";
 #else
-static const char VERSION[] = "v5.0.2";
+// MOD (QOL): fork-specific version so modded builds only lobby with each other. The netcode gates
+// multiplayer compatibility solely on this string (net.cpp lobbyPlayerJoinRequest), and this fork
+// changes shrine/respec/shop netcode, so it must not silently connect to vanilla v5.0.2 clients.
+static const char VERSION[] = "v5.0.2-qol";
 #endif
 #define GAME_CODE
 
