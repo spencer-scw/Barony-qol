@@ -32760,7 +32760,7 @@ void GenericGUIMenu::AssistShrineGUI_t::onCharacterChange()
 	if ( multiplayer == SINGLE )
 	{
 		receivedCharacterChangeOK = true;
-		addNotification(Language::get(6334), Language::get(6335), "", GenericGUIMenu::AssistShrineGUI_t::AssistNotification_t::NOTIF_CHARACTER_CHANGE_OK);
+		addNotification(Language::get(6334), "Changes applied immediately.", "", GenericGUIMenu::AssistShrineGUI_t::AssistNotification_t::NOTIF_CHARACTER_CHANGE_OK);
 
 		std::string racename = "";
 		if ( savedRace != RACE_HUMAN )
@@ -32781,11 +32781,11 @@ void GenericGUIMenu::AssistShrineGUI_t::onCharacterChange()
 			{
 				if ( i != parentGUI.gui_player )
 				{
-					messagePlayer(i, MESSAGE_WORLD, Language::get(6336), stats[parentGUI.gui_player]->name, racename.c_str(), classname.c_str());
+					messagePlayer(i, MESSAGE_WORLD, "%s changed their character.\n(%s %s)", stats[parentGUI.gui_player]->name, racename.c_str(), classname.c_str());
 				}
 				else if ( i == parentGUI.gui_player )
 				{
-					messagePlayer(i, MESSAGE_WORLD, Language::get(6355), racename.c_str(), classname.c_str());
+					messagePlayer(i, MESSAGE_WORLD, "Your character has changed.\n(%s %s)", racename.c_str(), classname.c_str());
 				}
 			}
 		}
@@ -32809,7 +32809,7 @@ void GenericGUIMenu::AssistShrineGUI_t::onCharacterChange()
 	else if ( multiplayer == SERVER )
 	{
 		receivedCharacterChangeOK = true;
-		addNotification(Language::get(6334), Language::get(6335), "", GenericGUIMenu::AssistShrineGUI_t::AssistNotification_t::NOTIF_CHARACTER_CHANGE_OK);
+		addNotification(Language::get(6334), "Changes applied immediately.", "", GenericGUIMenu::AssistShrineGUI_t::AssistNotification_t::NOTIF_CHARACTER_CHANGE_OK);
 
 		std::string racename = "";
 		if ( savedRace != RACE_HUMAN )
@@ -32824,7 +32824,7 @@ void GenericGUIMenu::AssistShrineGUI_t::onCharacterChange()
 		camelCaseString(racename);
 		std::string classname = playerClassLangEntry(savedClass >= 0 ? savedClass : client_classes[parentGUI.gui_player], parentGUI.gui_player);
 		camelCaseString(classname);
-		messagePlayer(clientnum, MESSAGE_WORLD, Language::get(6355), racename.c_str(), classname.c_str());
+		messagePlayer(clientnum, MESSAGE_WORLD, "Your character has changed.\n(%s %s)", racename.c_str(), classname.c_str());
 
 		for ( int i = 1; i < MAXPLAYERS; ++i )
 		{

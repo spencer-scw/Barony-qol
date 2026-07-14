@@ -1796,7 +1796,7 @@ bool dropItem(Item* const item, const int player, const bool notifyMessage, cons
 	// calls this same function) remote clients.
 	if ( currentlevel == 0 && !secretlevel )
 	{
-		messagePlayer(player, MESSAGE_INTERACTION, Language::get(6999));
+		messagePlayer(player, MESSAGE_INTERACTION, "You can't drop items here.");
 		return false;
 	}
 

@@ -4867,7 +4867,7 @@ static std::unordered_map<Uint32, void(*)()> clientPacketHandlers = {
 			free(refItem);
 		}
 		stats[clientnum]->GOLD += refund;
-		messagePlayer(clientnum, MESSAGE_INVENTORY, Language::get(7000));
+		messagePlayer(clientnum, MESSAGE_INVENTORY, "That item was no longer available.");
 	}},
 
 	// you died
@@ -6563,13 +6563,13 @@ static std::unordered_map<Uint32, void(*)()> clientPacketHandlers = {
 		{
 			if ( gui.bOpen )
 			{
-				gui.addNotification(Language::get(6334), Language::get(6335), "", GenericGUIMenu::AssistShrineGUI_t::AssistNotification_t::NOTIF_CHARACTER_CHANGE_OK);
+				gui.addNotification(Language::get(6334), "Changes applied immediately.", "", GenericGUIMenu::AssistShrineGUI_t::AssistNotification_t::NOTIF_CHARACTER_CHANGE_OK);
 			}
-			messagePlayer(clientnum, MESSAGE_WORLD, Language::get(6355), racename.c_str(), classname.c_str());
+			messagePlayer(clientnum, MESSAGE_WORLD, "Your character has changed.\n(%s %s)", racename.c_str(), classname.c_str());
 		}
 		else
 		{
-			messagePlayer(clientnum, MESSAGE_WORLD, Language::get(6336), stats[player]->name, racename.c_str(), classname.c_str());
+			messagePlayer(clientnum, MESSAGE_WORLD, "%s changed their character.\n(%s %s)", stats[player]->name, racename.c_str(), classname.c_str());
 		}
 	}
 	}},
@@ -9325,7 +9325,7 @@ static std::unordered_map<Uint32, void(*)()> serverPacketHandlers = {
 			{
 				if ( i != player )
 				{
-					messagePlayer(i, MESSAGE_WORLD, Language::get(6336), stats[player]->name, racename.c_str(), classname.c_str());
+					messagePlayer(i, MESSAGE_WORLD, "%s changed their character.\n(%s %s)", stats[player]->name, racename.c_str(), classname.c_str());
 				}
 			}
 
