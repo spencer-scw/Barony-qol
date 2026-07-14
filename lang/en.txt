@@ -7270,5 +7270,7 @@ has been unlocked!#
 6996 Mouse Events Limit#
 6997 Limits the amount of mouse movement events processed per frame to prevent large camera swings.#
 6998 Unlimited#
+6999 You can't drop items here.#
+7000 That item was no longer available.#
 
 7999 END#

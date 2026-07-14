@@ -1790,6 +1790,16 @@ bool dropItem(Item* const item, const int player, const bool notifyMessage, cons
 		return false;
 	}
 
+	// MOD: forbid dropping items in the start hub/lobby. This closes the respec exploit where a
+	// player drops their gear, respecs (which re-rolls the character and wipes carried items), then
+	// picks the dropped gear back up. Covers host, singleplayer, and (via the 'DROP' handler that
+	// calls this same function) remote clients.
+	if ( currentlevel == 0 && !secretlevel )
+	{
+		messagePlayer(player, MESSAGE_INTERACTION, Language::get(6999));
+		return false;
+	}
+
 	if ( itemIsEquipped(item, player) )
 	{
 		if (!item->canUnequip(stats[player]))

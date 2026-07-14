@@ -936,15 +936,19 @@ void Entity::actAssistShrine()
 		shrineInit = 1;
 	}
 
-	Sint32& shrineInteracting = this->skill[0];
+	// MOD: skill[0] is a per-player occupancy bitmask (bit i set == player i is using the shrine),
+	// replacing the original single interacting-player UID so any number of players may use it at once.
+	Sint32& shrineOccupancy = this->skill[0];
 
 	Uint32 numFlames = 0;
 	Uint32 redFlames = 0;
-	Entity* interacting = uidToEntity(shrineInteracting);
-	if ( interacting && interacting->behavior == &actPlayer )
+	for ( int i = 0; i < MAXPLAYERS; ++i )
 	{
-		redFlames |= (1 << interacting->skill[2]);
-		numFlames |= (1 << interacting->skill[2]);
+		if ( shrineOccupancy & (1 << i) )
+		{
+			redFlames |= (1 << i);
+			numFlames |= (1 << i);
+		}
 	}
 	for ( int i = 0; i < MAXPLAYERS; ++i )
 	{
@@ -1056,87 +1060,69 @@ void Entity::actAssistShrine()
 		return;
 	}
 
-	if ( shrineInteracting > 0 )
+	// MOD: release each occupying player who has left range or disconnected. Bit index == player index,
+	// so no UID lookup is needed; only that player's bit is cleared, leaving other users untouched.
+	for ( int i = 0; i < MAXPLAYERS; ++i )
 	{
-		if ( !interacting || (entityDist(interacting, this) > TOUCHRANGE) )
+		if ( !(shrineOccupancy & (1 << i)) )
 		{
-			int playernum = -1;
-			if ( !interacting )
-			{
-				for ( int i = 0; i < MAXPLAYERS; ++i )
-				{
-					if ( achievementObserver.playerUids[i] == shrineInteracting )
-					{
-						playernum = i;
-						break;
-					}
-				}
-			}
-			else if ( interacting->behavior == &actPlayer )
-			{
-				playernum = interacting->skill[2];
-			}
-			shrineInteracting = 0;
-			serverUpdateEntitySkill(this, 0);
-			if ( multiplayer == SERVER && playernum > 0 )
-			{
-				strcpy((char*)net_packet->data, "ASCL");
-				net_packet->data[4] = playernum;
-				SDLNet_Write32(this->getUID(), &net_packet->data[5]);
-				net_packet->address.host = net_clients[playernum - 1].host;
-				net_packet->address.port = net_clients[playernum - 1].port;
-				net_packet->len = 9;
-				sendPacketSafe(net_sock, -1, net_packet, playernum - 1);
-			}
-			else if ( multiplayer == SINGLE || playernum == 0 )
-			{
-				if ( playernum >= 0 && playernum < MAXPLAYERS )
-				{
-					GenericGUI[playernum].assistShrineGUI.closeAssistShrine();
-				}
-			}
+			continue;
+		}
+
+		Entity* occupant = client_disconnected[i] ? nullptr : players[i]->entity;
+		if ( occupant && entityDist(occupant, this) <= TOUCHRANGE )
+		{
+			continue; // still in range and using the shrine
+		}
+
+		shrineOccupancy &= ~(1 << i);
+		serverUpdateEntitySkill(this, 0);
+		if ( multiplayer == SERVER && i > 0 )
+		{
+			strcpy((char*)net_packet->data, "ASCL");
+			net_packet->data[4] = i;
+			SDLNet_Write32(this->getUID(), &net_packet->data[5]);
+			net_packet->address.host = net_clients[i - 1].host;
+			net_packet->address.port = net_clients[i - 1].port;
+			net_packet->len = 9;
+			sendPacketSafe(net_sock, -1, net_packet, i - 1);
+		}
+		else if ( multiplayer == SINGLE || i == 0 )
+		{
+			GenericGUI[i].assistShrineGUI.closeAssistShrine();
 		}
 	}
 
-	// using
+	// using: admit any player in range whose bit is not already set (no single-user lock).
 	for ( int i = 0; i < MAXPLAYERS; i++ )
 	{
 		if ( selectedEntity[i] == this || client_selected[i] == this )
 		{
 			if ( inrange[i] && players[i]->entity )
 			{
-				if ( shrineInteracting != 0 )
+				if ( shrineOccupancy & (1 << i) )
 				{
-					if ( Entity* interacting = uidToEntity(shrineInteracting) )
-					{
-						if ( interacting != players[i]->entity )
-						{
-							messagePlayer(i, MESSAGE_INTERACTION, Language::get(6351));
-						}
-					}
+					continue; // this player is already using the shrine
 				}
-				else
+
+				shrineOccupancy |= (1 << i);
+				if ( multiplayer == SERVER )
 				{
-					shrineInteracting = players[i]->entity->getUID();
-					if ( multiplayer == SERVER )
-					{
-						serverUpdateEntitySkill(this, 0);
-					}
-					if ( players[i]->isLocalPlayer() )
-					{
-						GenericGUI[i].openGUI(GUI_TYPE_ASSIST, this);
-					}
-					else if ( multiplayer == SERVER && i > 0 )
-					{
-						strcpy((char*)net_packet->data, "ASSO");
-						SDLNet_Write32(this->getUID(), &net_packet->data[4]);
-						net_packet->address.host = net_clients[i - 1].host;
-						net_packet->address.port = net_clients[i - 1].port;
-						net_packet->len = 8;
-						sendPacketSafe(net_sock, -1, net_packet, i - 1);
-					}
+					serverUpdateEntitySkill(this, 0);
 				}
-				break;
+				if ( players[i]->isLocalPlayer() )
+				{
+					GenericGUI[i].openGUI(GUI_TYPE_ASSIST, this);
+				}
+				else if ( multiplayer == SERVER && i > 0 )
+				{
+					strcpy((char*)net_packet->data, "ASSO");
+					SDLNet_Write32(this->getUID(), &net_packet->data[4]);
+					net_packet->address.host = net_clients[i - 1].host;
+					net_packet->address.port = net_clients[i - 1].port;
+					net_packet->len = 8;
+					sendPacketSafe(net_sock, -1, net_packet, i - 1);
+				}
 			}
 		}
 	}

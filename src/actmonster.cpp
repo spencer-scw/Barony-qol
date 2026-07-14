@@ -4575,8 +4575,21 @@ void actMonster(Entity* my)
 			}
 			else if (my->monsterState == MONSTER_STATE_TALK)
 			{
+				// MOD: regular shopkeepers serve multiple customers at once. When one is already
+				// trading (state == TALK), route a new customer straight into their own shop session
+				// instead of the "I am somewhat busy now." brush-off. The mysterious merchant keeps
+				// its single-user orb flow.
+				const bool parallelShopkeep = (myStats->type == SHOPKEEPER)
+					&& !(myStats->MISC_FLAGS[STAT_FLAG_MYSTERIOUS_SHOPKEEP] > 0);
+				if ( parallelShopkeep
+					&& shopkeeper[monsterclicked] != my->getUID()
+					&& !my->checkEnemy(players[monsterclicked]->entity) )
+				{
+					startTradingServer(my, monsterclicked);
+				}
 				// for shopkeepers trading with a player, "I am somewhat busy now."
-				if (my->monsterTarget != players[monsterclicked]->entity->getUID())
+				else if (my->monsterTarget != players[monsterclicked]->entity->getUID()
+					&& shopkeeper[monsterclicked] != my->getUID())
 				{
 					switch (myStats->type)
 					{
