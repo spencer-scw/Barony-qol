@@ -127,6 +127,9 @@ extern bool autoLimbReload;
 #pragma warning( pop )
 #undef min
 #undef max
+// MOD: <windows.h> defines a GDI macro GetObject -> GetObjectA, which mangles rapidjson's
+// Value::GetObject() call. Drop the macro (we use OpenGL, not GDI).
+#undef GetObject
 #endif
 
 #ifdef APPLE
