@@ -114,6 +114,15 @@ jobs:
           cp nfd-src/src/include/nfd.h "$GITHUB_WORKSPACE/deps/nfd/include/"
           cp nfd-build/Release/nfd.lib "$GITHUB_WORKSPACE/deps/nfd/lib/"
 
+      - name: Provide Windows POSIX shim (dirent.h)
+        shell: bash
+        run: |
+          # dirent.h is POSIX and absent on MSVC; Barony includes it on Windows (src/main.hpp).
+          # Use the single-header tronkko/dirent port and put it on the compiler include path.
+          mkdir -p "$GITHUB_WORKSPACE/winshim"
+          curl -fsSL https://raw.githubusercontent.com/tronkko/dirent/1.24/include/dirent.h \
+            -o "$GITHUB_WORKSPACE/winshim/dirent.h"
+
       - name: Fetch + decrypt proprietary SDK bundle (FMOD + Steamworks)
         shell: bash
         env:
@@ -138,10 +147,12 @@ jobs:
           FMOD_DIR: ${{ github.workspace }}/deps/fmod-win
           NFD_DIR: ${{ github.workspace }}/deps/nfd
         run: |
+          WINSHIM=$(cygpath -m "$GITHUB_WORKSPACE/winshim")
           mkdir -p build && cd build
           cmake -DCMAKE_BUILD_TYPE=Release -DFMOD_ENABLED=ON \
             -DCMAKE_TOOLCHAIN_FILE="$VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" \
             -DVCPKG_TARGET_TRIPLET=x64-windows \
+            -DCMAKE_CXX_FLAGS="-I$WINSHIM" -DCMAKE_C_FLAGS="-I$WINSHIM" \
             -A x64 ..
           cmake --build . --config Release -j
 
