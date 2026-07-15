@@ -211,7 +211,10 @@ bool CSteamStatistics::RequestStats()
 		return false;
 	}
 	// Request user stats.
-	return SteamUserStats()->RequestCurrentStats();
+	// MOD: RequestCurrentStats() was removed in Steamworks SDK 1.60+. Per Valve's header note, the
+	// call is no longer required — the Steam client synchronizes stats/achievements before the game
+	// process begins, so they are already available here. Report success.
+	return true;
 }
 
 bool CSteamStatistics::RequestGlobalStats()

@@ -47,12 +47,26 @@ void closeShop(const int player)
 			Entity* entity = uidToEntity(shopkeeper[player]);
 			if ( entity )
 			{
-				entity->skill[0] = 0;
-				if ( uidToEntity(entity->skill[1]) )
+				// MOD: keep the NPC "in talk" while other players are still shopping here, so that
+				// one player closing their shop doesn't kick the others.
+				bool othersShopping = false;
+				for ( int i = 0; i < MAXPLAYERS; ++i )
 				{
-					monsterMoveAside(entity, uidToEntity(entity->skill[1]));
+					if ( i != player && shopkeeper[i] == shopkeeper[player] )
+					{
+						othersShopping = true;
+						break;
+					}
 				}
-				entity->skill[1] = 0;
+				if ( !othersShopping )
+				{
+					entity->skill[0] = 0;
+					if ( uidToEntity(entity->skill[1]) )
+					{
+						monsterMoveAside(entity, uidToEntity(entity->skill[1]));
+					}
+					entity->skill[1] = 0;
+				}
 			}
 		}
 		else
@@ -60,9 +74,10 @@ void closeShop(const int player)
 			// inform server that we're done talking to shopkeeper
 			strcpy((char*)net_packet->data, "SHPC");
 			SDLNet_Write32((Uint32)shopkeeper[player], &net_packet->data[4]);
+			net_packet->data[8] = (Uint8)player; // MOD: tell the server which player's session ended
 			net_packet->address.host = net_server.host;
 			net_packet->address.port = net_server.port;
-			net_packet->len = 8;
+			net_packet->len = 9;
 			sendPacketSafe(net_sock, -1, net_packet, 0);
 		}
 	}
@@ -131,6 +146,10 @@ void startTradingServer(Entity* entity, int player)
 	}
 	else if ( multiplayer == SERVER )
 	{
+		// MOD: track remote clients' shop sessions server-side too, so concurrent shoppers can be
+		// counted when deciding whether to release the NPC (see closeShop / 'SHPC' handler).
+		shopkeeper[player] = entity->getUID();
+
 		// open shop on client
 		Stat* entitystats = entity->getStats();
 		strcpy((char*)net_packet->data, "SHOP");
@@ -672,6 +691,7 @@ bool sellItemToShop(const int player, Item* item)
 		{
 			Stat* shopstats = entity->getStats();
 			shopstats->GOLD -= item->sellValue(player);
+			shopstats->GOLD = std::max(0, shopstats->GOLD); // MOD: keep shop gold from going negative under concurrent sells
 		}
 	}
 

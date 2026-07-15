@@ -4842,6 +4842,34 @@ static std::unordered_map<Uint32, void(*)()> clientPacketHandlers = {
 		}
 	}},
 
+	// MOD: buy failed (item already bought by another concurrent shopper) — reverse this client's
+	// optimistic purchase: remove one matching item it granted itself locally, and refund the gold.
+	{'SHPF', [](){
+		Item* refItem = newItem(
+			static_cast<ItemType>(SDLNet_Read32(&net_packet->data[4])),
+			static_cast<Status>(SDLNet_Read32(&net_packet->data[8])),
+			SDLNet_Read16(&net_packet->data[12]),
+			SDLNet_Read32(&net_packet->data[19]),
+			SDLNet_Read32(&net_packet->data[14]),
+			net_packet->data[18] != 0, nullptr);
+		Sint32 refund = SDLNet_Read32(&net_packet->data[23]);
+		if ( refItem )
+		{
+			for ( node_t* node = stats[clientnum]->inventory.first; node != NULL; node = node->next )
+			{
+				Item* it = (Item*)node->element;
+				if ( it && !itemCompare(refItem, it, false, false) )
+				{
+					consumeItem(it, clientnum);
+					break;
+				}
+			}
+			free(refItem);
+		}
+		stats[clientnum]->GOLD += refund;
+		messagePlayer(clientnum, MESSAGE_INVENTORY, "That item was no longer available.");
+	}},
+
 	// you died
 	{'UDIE', [](){
 		KilledBy killer = (KilledBy)SDLNet_Read32(&net_packet->data[4]);
@@ -6271,6 +6299,28 @@ static std::unordered_map<Uint32, void(*)()> clientPacketHandlers = {
 		}
 	}},
 
+	// MOD: server order to apply an assist-shrine respec (class + race + sex + appearance) to a
+	// live character. Mirrors the game-start re-roll: for the local player we wipe first, and
+	// intro=true so the new starting loadout is granted (see charclass.cpp initClass).
+	{ 'ALIV', []() {
+		int player = net_packet->data[4];
+		if ( player >= 0 && player < MAXPLAYERS && stats[player] )
+		{
+			client_classes[player] = net_packet->data[5];
+			stats[player]->playerRace = net_packet->data[6];
+			stats[player]->sex = (sex_t)net_packet->data[7];
+			stats[player]->stat_appearance = net_packet->data[8];
+			bool oldIntro = intro;
+			intro = true;
+			if ( players[player]->isLocalPlayer() )
+			{
+				stats[player]->clearStats();
+			}
+			initClass(player);
+			intro = oldIntro;
+		}
+	}},
+
 	// open fullscreen sign
 	{'SIGN', []() {
 		Uint32 uid = SDLNet_Read32(&net_packet->data[4]);
@@ -6513,13 +6563,13 @@ static std::unordered_map<Uint32, void(*)()> clientPacketHandlers = {
 		{
 			if ( gui.bOpen )
 			{
-				gui.addNotification(Language::get(6334), Language::get(6335), "", GenericGUIMenu::AssistShrineGUI_t::AssistNotification_t::NOTIF_CHARACTER_CHANGE_OK);
+				gui.addNotification(Language::get(6334), "Changes applied immediately.", "", GenericGUIMenu::AssistShrineGUI_t::AssistNotification_t::NOTIF_CHARACTER_CHANGE_OK);
 			}
-			messagePlayer(clientnum, MESSAGE_WORLD, Language::get(6355), racename.c_str(), classname.c_str());
+			messagePlayer(clientnum, MESSAGE_WORLD, "Your character has changed.\n(%s %s)", racename.c_str(), classname.c_str());
 		}
 		else
 		{
-			messagePlayer(clientnum, MESSAGE_WORLD, Language::get(6336), stats[player]->name, racename.c_str(), classname.c_str());
+			messagePlayer(clientnum, MESSAGE_WORLD, "%s changed their character.\n(%s %s)", stats[player]->name, racename.c_str(), classname.c_str());
 		}
 	}
 	}},
@@ -7899,12 +7949,32 @@ static std::unordered_map<Uint32, void(*)()> serverPacketHandlers = {
 
 	// close shop
 	{'SHPC', [](){
-		Entity* entity = uidToEntity((Uint32)SDLNet_Read32(&net_packet->data[4]));
+		Uint32 uid = (Uint32)SDLNet_Read32(&net_packet->data[4]);
+		const int player = std::min((int)net_packet->data[8], MAXPLAYERS - 1);
+		if ( player >= 0 && player < MAXPLAYERS )
+		{
+			shopkeeper[player] = 0; // MOD: this client's shop session ended
+		}
+		Entity* entity = uidToEntity(uid);
 		if ( entity )
 		{
-			entity->skill[0] = 0;
-			monsterMoveAside(entity, uidToEntity(entity->skill[1]));
-			entity->skill[1] = 0;
+			// MOD: only release the NPC's talk lock when no other player is still shopping here,
+			// so one client leaving doesn't kick the remaining shoppers.
+			bool othersShopping = false;
+			for ( int i = 0; i < MAXPLAYERS; ++i )
+			{
+				if ( shopkeeper[i] == uid )
+				{
+					othersShopping = true;
+					break;
+				}
+			}
+			if ( !othersShopping )
+			{
+				entity->skill[0] = 0;
+				monsterMoveAside(entity, uidToEntity(entity->skill[1]));
+				entity->skill[1] = 0;
+			}
 		}
 		return;
 	}},
@@ -7943,6 +8013,7 @@ static std::unordered_map<Uint32, void(*)()> serverPacketHandlers = {
 		}
 		item->x = (Sint8)net_packet->data[18];
 		item->y = (Sint8)net_packet->data[19];
+		bool found = false; // MOD: whether the item still existed in the shop (concurrent-buy check)
 		node_t* nextnode;
 		for ( auto node = entitystats->inventory.first; node != NULL; node = nextnode )
 		{
@@ -7962,6 +8033,7 @@ static std::unordered_map<Uint32, void(*)()> serverPacketHandlers = {
 			}
 			if (!itemCompare(item, item2, false, false))
 			{
+				found = true;
 				printlog("[Shops]: client %d bought item from shop (uid=%d)\n", client, uidnum);
 				if ( shopIsMysteriousShopkeeper(entity) )
 				{
@@ -7977,6 +8049,30 @@ static std::unordered_map<Uint32, void(*)()> serverPacketHandlers = {
 		}
 
 		Sint32 buyValue = item->buyValue(client);
+		if ( !found )
+		{
+			// MOD: the item was already bought by another concurrent shopper. Order the buyer to
+			// reverse their optimistic purchase (remove the item they granted locally + refund gold),
+			// rather than charging them for a phantom item.
+			printlog("[Shops]: client %d buy failed, item already sold (uid=%d), refunding\n", client, uidnum);
+			if ( client > 0 && multiplayer == SERVER )
+			{
+				strcpy((char*)net_packet->data, "SHPF");
+				SDLNet_Write32(item->type, &net_packet->data[4]);
+				SDLNet_Write32(item->status, &net_packet->data[8]);
+				SDLNet_Write16(item->beatitude, &net_packet->data[12]);
+				SDLNet_Write32(item->appearance, &net_packet->data[14]);
+				net_packet->data[18] = item->identified ? 1 : 0;
+				SDLNet_Write32((Uint32)item->count, &net_packet->data[19]);
+				SDLNet_Write32((Uint32)buyValue, &net_packet->data[23]);
+				net_packet->address.host = net_clients[client - 1].host;
+				net_packet->address.port = net_clients[client - 1].port;
+				net_packet->len = 27;
+				sendPacketSafe(net_sock, -1, net_packet, client - 1);
+			}
+			free(item);
+			return;
+		}
 		entitystats->GOLD += buyValue;
 		stats[client]->GOLD -= buyValue;
 		stats[client]->GOLD = std::max(0, stats[client]->GOLD);
@@ -8142,6 +8238,7 @@ static std::unordered_map<Uint32, void(*)()> serverPacketHandlers = {
 
 		stats[client]->GOLD += goldValue;
 		entitystats->GOLD -= goldValue;
+		entitystats->GOLD = std::max(0, entitystats->GOLD); // MOD: don't let concurrent sells drive shop gold negative
 		//if ( players[client] && players[client]->entity )
 		//{
 		//	if ( local_rng.rand() % 2 )
@@ -9228,7 +9325,7 @@ static std::unordered_map<Uint32, void(*)()> serverPacketHandlers = {
 			{
 				if ( i != player )
 				{
-					messagePlayer(i, MESSAGE_WORLD, Language::get(6336), stats[player]->name, racename.c_str(), classname.c_str());
+					messagePlayer(i, MESSAGE_WORLD, "%s changed their character.\n(%s %s)", stats[player]->name, racename.c_str(), classname.c_str());
 				}
 			}
 
@@ -9246,6 +9343,10 @@ static std::unordered_map<Uint32, void(*)()> serverPacketHandlers = {
 				net_packet->len = 9;
 				sendPacketSafe(net_sock, -1, net_packet, player - 1);
 			}
+
+			// MOD: apply the respec to the live character right away (and propagate via 'ALIV'),
+			// instead of deferring it to the next game start.
+			gui.applyCharacterChangeLive();
 		}
 	}},
 
@@ -9257,9 +9358,10 @@ static std::unordered_map<Uint32, void(*)()> serverPacketHandlers = {
 			Uint32 uid = SDLNet_Read32(&net_packet->data[5]);
 			if ( Entity* shrine = uidToEntity(uid) )
 			{
-				if ( achievementObserver.playerUids[player] == (Uint32)shrine->skill[0] )
+				// MOD: skill[0] is a per-player occupancy bitmask; clear only this player's bit.
+				if ( shrine->skill[0] & (1 << player) )
 				{
-					shrine->skill[0] = 0;
+					shrine->skill[0] &= ~(1 << player);
 					serverUpdateEntitySkill(shrine, 0);
 				}
 			}

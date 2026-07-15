@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.0)
+cmake_minimum_required(VERSION 3.5)
 project(barony)
 
 if (NOT CMAKE_BUILD_TYPE)
@@ -315,8 +315,10 @@ else( NOT WIN32 )
 	set(CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG} -pg ${OPTIMIZATION_LEVEL} -ffast-math -funroll-loops -malign-double -fstrict-aliasing -mwindows")
 	set(CMAKE_C_FLAGS_RELEASE "${CMAKE_C_FLAGS_RELEASE} ${OPTIMIZATION_LEVEL} -ffast-math -funroll-loops -malign-double -fstrict-aliasing -mwindows")
 	# We should be using Visual Studio flags...or better yet, providing an option to select which you'd prefer.
-	set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} /MP")
-	set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} /MP ")
+	# MOD: MSVC defaults to C++14 and small object sections; the code needs C++17 (std::variant,
+	# std::clamp, ...) and Barony's large TUs overflow without /bigobj.
+	set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} /MP /std:c++17 /bigobj")
+	set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} /MP /std:c++17 /bigobj ")
 	set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} /SUBSYSTEM:WINDOWS")
   set (Windows 1)
 endif( NOT WIN32 )
@@ -366,7 +368,29 @@ if (STEAMWORKS_ENABLED)
   find_package(NFD REQUIRED)
   INCLUDE_DIRECTORIES(${NFD_INCLUDE_DIR})
   LINK_DIRECTORIES(${NFD_LIBRARY})
+  # MOD: NFD's Linux backend is built against GTK3, so the final link needs GTK/glib libs (else
+  # undefined references like g_free). Append them to NFD_LIBRARY so every target that links NFD
+  # picks them up. Not needed on Windows (uses the Win32 dialog) or macOS (Cocoa).
+  if (NOT WIN32 AND NOT APPLE)
+    find_package(PkgConfig REQUIRED)
+    pkg_check_modules(GTK3 REQUIRED gtk+-3.0)
+    link_directories(${GTK3_LIBRARY_DIRS})
+    list(APPEND NFD_LIBRARY ${GTK3_LIBRARIES})
+  endif()
+  if (WIN32)
+    # NFD's Windows backend uses the COM IFileDialog API (ole32/shell32/uuid).
+    list(APPEND NFD_LIBRARY ole32 shell32 uuid)
+  endif()
 ENDIF (STEAMWORKS_ENABLED)
+
+# MOD: GLEW is used only on Windows (see src/main.hpp `#ifdef WINDOWS`). Upstream links it via the
+# checked-in Visual Studio solution, not CMake, so wire it up for the CMake+MSVC build here.
+if (WIN32)
+  # NOTE: uses the repo's cmake/Modules/FindGLEW.cmake, which sets GLEW_INCLUDE_DIR / GLEW_LIBRARIES
+  # (not an imported GLEW::GLEW target). It locates vcpkg's glew via CMAKE_PREFIX_PATH.
+  find_package(GLEW REQUIRED)
+  include_directories(${GLEW_INCLUDE_DIR})
+endif()
 
 INCLUDE_DIRECTORIES(${SDL2_INCLUDE_DIRS} ${SDL2_INCLUDE_DIR} ${SDL2IMAGE_INCLUDE_DIRS} ${SDL2_IMAGE_INCLUDE_DIR} ${SDL2NET_INCLUDE_DIR} ${SDL2_NET_INCLUDE_DIRS} ${SDL2TTF_INCLUDE_DIR}  ${SDL2_TTF_INCLUDE_DIRS} ${PHYSFS_INCLUDE_DIR})
 LINK_DIRECTORIES(${SDL2_LINK_DIRS} ${SDL2_LINK_DIR} ${SDL2IMAGE_LINK_DIRS} ${SDL2_IMAGE_LINK_DIR} ${SDL2NET_LINK_DIR} ${SDL2_NET_LINK_DIRS} ${SDL2TTF_LINK_DIR}  ${SDL2_TTF_LINK_DIRS} ${PHYSFS_LINK_DIR})
@@ -556,6 +580,8 @@ if (GAME_ENABLED)
 		set_target_properties(barony PROPERTIES VS_DEBUGGER_WORKING_DIRECTORY "\$(BARONY_DATADIR)/")
 	endif()
 	target_link_libraries(barony ${SDL2_LIBRARIES} ${SDL2_LIBRARY} ${SDL2IMAGE_LIBRARIES} ${SDL2_IMAGE_LIBRARIES} ${SDL2_NET_LIBRARIES} ${SDL2_TTF_LIBRARIES} ${SDL2TTF_LIBRARY})
+	# MOD: Windows needs GLEW + the system OpenGL libs (not linked elsewhere for the CMake build).
+	target_link_libraries(barony ${GLEW_LIBRARIES} opengl32 glu32)
 	if (STEAMWORKS_ENABLED)
 		target_link_libraries(barony ${STEAMWORKS_LIBRARY})
 		target_link_libraries(barony ${NFD_LIBRARY})

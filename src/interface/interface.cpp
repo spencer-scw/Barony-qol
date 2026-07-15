@@ -32457,7 +32457,8 @@ void GenericGUIMenu::AssistShrineGUI_t::closeAssistShrine()
 	{
 		if ( Entity* shrine = uidToEntity(shrineUID) )
 		{
-			shrine->skill[0] = 0;
+			// MOD: skill[0] is a per-player occupancy bitmask; release only this player's bit.
+			shrine->skill[0] &= ~(1 << playernum);
 			serverUpdateEntitySkill(shrine, 0);
 		}
 	}
@@ -32759,7 +32760,7 @@ void GenericGUIMenu::AssistShrineGUI_t::onCharacterChange()
 	if ( multiplayer == SINGLE )
 	{
 		receivedCharacterChangeOK = true;
-		addNotification(Language::get(6334), Language::get(6335), "", GenericGUIMenu::AssistShrineGUI_t::AssistNotification_t::NOTIF_CHARACTER_CHANGE_OK);
+		addNotification(Language::get(6334), "Changes applied immediately.", "", GenericGUIMenu::AssistShrineGUI_t::AssistNotification_t::NOTIF_CHARACTER_CHANGE_OK);
 
 		std::string racename = "";
 		if ( savedRace != RACE_HUMAN )
@@ -32780,14 +32781,15 @@ void GenericGUIMenu::AssistShrineGUI_t::onCharacterChange()
 			{
 				if ( i != parentGUI.gui_player )
 				{
-					messagePlayer(i, MESSAGE_WORLD, Language::get(6336), stats[parentGUI.gui_player]->name, racename.c_str(), classname.c_str());
+					messagePlayer(i, MESSAGE_WORLD, "%s changed their character.\n(%s %s)", stats[parentGUI.gui_player]->name, racename.c_str(), classname.c_str());
 				}
 				else if ( i == parentGUI.gui_player )
 				{
-					messagePlayer(i, MESSAGE_WORLD, Language::get(6355), racename.c_str(), classname.c_str());
+					messagePlayer(i, MESSAGE_WORLD, "Your character has changed.\n(%s %s)", racename.c_str(), classname.c_str());
 				}
 			}
 		}
+		applyCharacterChangeLive(); // MOD: apply immediately instead of on restart
 	}
 	else if ( multiplayer == CLIENT )
 	{
@@ -32807,7 +32809,7 @@ void GenericGUIMenu::AssistShrineGUI_t::onCharacterChange()
 	else if ( multiplayer == SERVER )
 	{
 		receivedCharacterChangeOK = true;
-		addNotification(Language::get(6334), Language::get(6335), "", GenericGUIMenu::AssistShrineGUI_t::AssistNotification_t::NOTIF_CHARACTER_CHANGE_OK);
+		addNotification(Language::get(6334), "Changes applied immediately.", "", GenericGUIMenu::AssistShrineGUI_t::AssistNotification_t::NOTIF_CHARACTER_CHANGE_OK);
 
 		std::string racename = "";
 		if ( savedRace != RACE_HUMAN )
@@ -32822,7 +32824,7 @@ void GenericGUIMenu::AssistShrineGUI_t::onCharacterChange()
 		camelCaseString(racename);
 		std::string classname = playerClassLangEntry(savedClass >= 0 ? savedClass : client_classes[parentGUI.gui_player], parentGUI.gui_player);
 		camelCaseString(classname);
-		messagePlayer(clientnum, MESSAGE_WORLD, Language::get(6355), racename.c_str(), classname.c_str());
+		messagePlayer(clientnum, MESSAGE_WORLD, "Your character has changed.\n(%s %s)", racename.c_str(), classname.c_str());
 
 		for ( int i = 1; i < MAXPLAYERS; ++i )
 		{
@@ -32840,6 +32842,7 @@ void GenericGUIMenu::AssistShrineGUI_t::onCharacterChange()
 				sendPacketSafe(net_sock, -1, net_packet, i - 1);
 			}
 		}
+		applyCharacterChangeLive(); // MOD: apply immediately instead of on restart
 	}
 }
 
@@ -34786,6 +34789,87 @@ void GenericGUIMenu::AssistShrineGUI_t::onGameStart()
 	}
 
 	resetSavedCharacterChanges();
+}
+
+// MOD: apply a queued class/race respec to the live character immediately, instead of deferring
+// to the next game start. Server-authoritative: the host applies here and propagates via 'ALIV'.
+void GenericGUIMenu::AssistShrineGUI_t::applyCharacterChangeLive()
+{
+	if ( multiplayer == CLIENT )
+	{
+		return; // clients apply via the server's 'ALIV' order, never locally
+	}
+
+	// The assist shrine only exists in the start hub/lobby; only respec there.
+	if ( !(currentlevel == 0 && !secretlevel) )
+	{
+		return;
+	}
+
+	const int player = parentGUI.gui_player;
+	if ( player < 0 || player >= MAXPLAYERS || !stats[player] )
+	{
+		return;
+	}
+
+	// Commit the pending selections to the live character (same writes as onGameStart, but without
+	// its shrineUID/claimedItems reset since the shrine is still open around us).
+	if ( savedClass >= 0 )
+	{
+		client_classes[player] = savedClass;
+	}
+	if ( savedRace >= 0 )
+	{
+		stats[player]->playerRace = savedRace;
+	}
+	if ( savedSex >= 0 )
+	{
+		stats[player]->sex = (sex_t)savedSex;
+	}
+	if ( savedAppearance >= 0 )
+	{
+		stats[player]->stat_appearance = savedAppearance;
+		if ( stats[player]->playerRace == RACE_HUMAN )
+		{
+			stats[player]->stat_appearance = stats[player]->stat_appearance % NUMAPPEARANCES;
+		}
+		else
+		{
+			stats[player]->stat_appearance = std::max(0, (Sint32)stats[player]->stat_appearance);
+			stats[player]->stat_appearance = std::min(1, (Sint32)stats[player]->stat_appearance);
+		}
+	}
+	resetSavedCharacterChanges();
+
+	// Re-roll the live character exactly as the game-start path does (menu.cpp): wipe then rebuild
+	// from class+race. intro=true so the new starting loadout is granted (see charclass.cpp:735).
+	stats[player]->clearStats();
+	const bool oldIntro = intro;
+	intro = true;
+	initClass(player);
+	intro = oldIntro;
+
+	// Propagate to every client so the respec is applied and visible everywhere.
+	if ( multiplayer == SERVER )
+	{
+		for ( int c = 1; c < MAXPLAYERS; ++c )
+		{
+			if ( client_disconnected[c] )
+			{
+				continue;
+			}
+			strcpy((char*)net_packet->data, "ALIV");
+			net_packet->data[4] = (Uint8)player;
+			net_packet->data[5] = (Uint8)client_classes[player];
+			net_packet->data[6] = (Uint8)stats[player]->playerRace;
+			net_packet->data[7] = (Uint8)stats[player]->sex;
+			net_packet->data[8] = (Uint8)stats[player]->stat_appearance;
+			net_packet->address.host = net_clients[c - 1].host;
+			net_packet->address.port = net_clients[c - 1].port;
+			net_packet->len = 9;
+			sendPacketSafe(net_sock, -1, net_packet, c - 1);
+		}
+	}
 }
 
 void GenericGUIMenu::AssistShrineGUI_t::resetItems()

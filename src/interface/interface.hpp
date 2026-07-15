@@ -831,6 +831,7 @@ public:
 
 		void resetItems();
 		void onGameStart();
+		void applyCharacterChangeLive(); // MOD: apply a shrine respec immediately mid-session instead of on restart
 		void resetSavedCharacterChanges();
 		void onMainMenuEnd();
 		bool hasItemsToClaim();

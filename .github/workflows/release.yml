@@ -1,0 +1,205 @@
+name: Release Build (QOL mod)
+
+# Builds the modded `barony` executable for Linux + Windows and attaches them to a GitHub Release.
+# Triggered by pushing a tag like `v5.0.2-qol.1`, or run manually from the Actions tab.
+#
+# ONE-TIME SETUP REQUIRED before this can succeed — see CI_SETUP.md. In short you must provide the
+# proprietary FMOD + Steamworks SDKs (which cannot be committed publicly) as an encrypted archive and
+# add three repository secrets: DEPS_URL, DEPS_KEY, DEPS_IV.
+
+on:
+  push:
+    tags: [ 'v*' ]
+  workflow_dispatch: {}
+
+permissions:
+  contents: write   # needed to create the Release
+
+jobs:
+  # ---------------------------------------------------------------------------
+  linux:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install open-source dependencies (apt)
+        run: |
+          sudo apt-get update
+          # SDL2 stack, PhysFS, RapidJson, libpng/zlib, curl; GTK3 for building NFD.
+          sudo apt-get install -y \
+            libsdl2-dev libsdl2-image-dev libsdl2-net-dev libsdl2-ttf-dev \
+            libpng-dev libz-dev libphysfs-dev rapidjson-dev \
+            libcurl4-openssl-dev libjsoncpp-dev \
+            libgtk-3-dev
+
+      - name: Fetch + decrypt proprietary SDK bundle (FMOD + Steamworks)
+        env:
+          DEPS_URL: ${{ secrets.DEPS_URL }}
+          DEPS_KEY: ${{ secrets.DEPS_KEY }}
+          DEPS_IV:  ${{ secrets.DEPS_IV }}
+        run: |
+          test -n "$DEPS_URL" && test -n "$DEPS_KEY" && test -n "$DEPS_IV" \
+            || { echo "::error::DEPS_URL/DEPS_KEY/DEPS_IV secrets are not set. See CI_SETUP.md"; exit 1; }
+          mkdir -p "$GITHUB_WORKSPACE/deps"
+          curl -fsSL "$DEPS_URL" -o deps.zip.enc
+          openssl aes-256-ctr -d -in deps.zip.enc -out deps.zip -K "$DEPS_KEY" -iv "$DEPS_IV"
+          unzip -q deps.zip -d "$GITHUB_WORKSPACE/deps"
+          # Expected layout after extraction (see CI_SETUP.md):
+          #   deps/fmod/api/core/{inc,lib/x86_64}/...
+          #   deps/steamworks_sdk/sdk/{public,redistributable_bin/linux64}/...
+          ls -R "$GITHUB_WORKSPACE/deps" | head -40
+
+      - name: Build NFD (Native File Dialog) from source
+        run: |
+          # NFD is required whenever Steamworks is enabled, and is not vendored in-repo.
+          git clone --depth 1 https://github.com/mlabbe/nativefiledialog.git nfd-src
+          cd nfd-src/build/gmake_linux
+          make config=release_x64 nfd
+          # Stage it into the layout FindNFD.cmake expects: $NFD_DIR/{include,lib}.
+          mkdir -p "$GITHUB_WORKSPACE/deps/nfd/include" "$GITHUB_WORKSPACE/deps/nfd/lib"
+          cp ../../src/include/nfd.h "$GITHUB_WORKSPACE/deps/nfd/include/"
+          cp ../../build/lib/Release/x64/libnfd.a "$GITHUB_WORKSPACE/deps/nfd/lib/"
+
+      - name: Configure + build
+        env:
+          STEAMWORKS_ENABLED: 1
+          STEAMWORKS_ROOT: ${{ github.workspace }}/deps/steamworks_sdk
+          FMOD_DIR: ${{ github.workspace }}/deps/fmod-linux
+          NFD_DIR: ${{ github.workspace }}/deps/nfd
+        run: |
+          mkdir -p build/release && cd build/release
+          cmake -DCMAKE_BUILD_TYPE=Release -DFMOD_ENABLED=ON -G "Unix Makefiles" ../..
+          make -j"$(nproc)"
+
+      - name: Stage release artifact
+        run: |
+          mkdir -p out
+          cp build/release/barony out/barony
+          # We build against a newer Steamworks SDK than the retail game ships, so its SteamAPI_Init
+          # needs the matching libsteam_api.so (retail's is too old — undefined SteamInternal_SteamAPI_Init).
+          # Ship it alongside; friends drop it next to the binary. (FMOD's libfmod.so.13 in the retail
+          # install is ABI-compatible, so it is not shipped.)
+          cp "$GITHUB_WORKSPACE/deps/steamworks_sdk/sdk/redistributable_bin/linux64/libsteam_api.so" out/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: barony-linux
+          path: out
+
+  # ---------------------------------------------------------------------------
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install open-source dependencies (vcpkg)
+        shell: bash
+        run: |
+          # Note: classic NFD is no longer a vcpkg port (only the API-incompatible *extended* fork),
+          # so it is built from source in the next step instead.
+          vcpkg install --triplet x64-windows \
+            sdl2 sdl2-image sdl2-net sdl2-ttf physfs rapidjson libpng zlib glew
+
+      - name: Build NFD (Native File Dialog) from source
+        shell: bash
+        run: |
+          git clone --depth 1 https://github.com/mlabbe/nativefiledialog.git nfd-src
+          # Minimal CMake wrapper builds just the classic static lib (Windows backend uses COM).
+          cat > nfd-src/CMakeLists.txt <<'CM'
+          cmake_minimum_required(VERSION 3.10)
+          project(nfd C CXX)
+          add_library(nfd STATIC src/nfd_common.c src/nfd_win.cpp)
+          target_include_directories(nfd PUBLIC src/include PRIVATE src)
+          CM
+          cmake -S nfd-src -B nfd-build -A x64
+          cmake --build nfd-build --config Release
+          mkdir -p "$GITHUB_WORKSPACE/deps/nfd/include" "$GITHUB_WORKSPACE/deps/nfd/lib"
+          cp nfd-src/src/include/nfd.h "$GITHUB_WORKSPACE/deps/nfd/include/"
+          cp nfd-build/Release/nfd.lib "$GITHUB_WORKSPACE/deps/nfd/lib/"
+
+      - name: Fetch + decrypt proprietary SDK bundle (FMOD + Steamworks)
+        shell: bash
+        env:
+          DEPS_URL: ${{ secrets.DEPS_URL }}
+          DEPS_KEY: ${{ secrets.DEPS_KEY }}
+          DEPS_IV:  ${{ secrets.DEPS_IV }}
+        run: |
+          test -n "$DEPS_URL" && test -n "$DEPS_KEY" && test -n "$DEPS_IV" \
+            || { echo "::error::DEPS_URL/DEPS_KEY/DEPS_IV secrets are not set. See CI_SETUP.md"; exit 1; }
+          mkdir -p "$GITHUB_WORKSPACE/deps"
+          curl -fsSL "$DEPS_URL" -o deps.zip.enc
+          openssl aes-256-ctr -d -in deps.zip.enc -out deps.zip -K "$DEPS_KEY" -iv "$DEPS_IV"
+          unzip -q deps.zip -d "$GITHUB_WORKSPACE/deps"
+          # Windows uses deps/steamworks_sdk/sdk/redistributable_bin/win64/steam_api64.lib
+          # and deps/fmod-win/api/core/lib/x86_64/fmod_vc.lib (see CI_SETUP.md).
+
+      - name: Configure + build (MSVC)
+        shell: bash
+        env:
+          STEAMWORKS_ENABLED: 1
+          STEAMWORKS_ROOT: ${{ github.workspace }}/deps/steamworks_sdk
+          FMOD_DIR: ${{ github.workspace }}/deps/fmod-win
+          NFD_DIR: ${{ github.workspace }}/deps/nfd
+        run: |
+          WINSHIM=$(cygpath -m "$GITHUB_WORKSPACE/winshim")
+          mkdir -p build && cd build
+          cmake -DCMAKE_BUILD_TYPE=Release -DFMOD_ENABLED=ON \
+            -DCMAKE_TOOLCHAIN_FILE="$VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" \
+            -DVCPKG_TARGET_TRIPLET=x64-windows \
+            -DCMAKE_CXX_FLAGS="-I$WINSHIM" -DCMAKE_C_FLAGS="-I$WINSHIM" \
+            -A x64 ..
+          # Only the game is shipped; skip the editor target (not needed for the mod release).
+          cmake --build . --config Release -j --target barony
+
+      - name: Stage release artifact
+        shell: bash
+        run: |
+          mkdir -p out
+          cp build/Release/barony.exe out/barony.exe
+          # Ship the matching Steamworks runtime DLL (retail's is older than our build's SDK).
+          cp "$GITHUB_WORKSPACE/deps/steamworks_sdk/sdk/redistributable_bin/win64/steam_api64.dll" out/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: barony-windows
+          path: out
+
+  # ---------------------------------------------------------------------------
+  release:
+    needs: [linux, windows]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Assemble release files
+        run: |
+          mkdir -p release
+          cp artifacts/barony-linux/barony          release/barony
+          cp artifacts/barony-linux/libsteam_api.so release/libsteam_api.so
+          cp artifacts/barony-windows/barony.exe     release/barony.exe
+          cp artifacts/barony-windows/steam_api64.dll release/steam_api64.dll
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            release/barony
+            release/libsteam_api.so
+            release/barony.exe
+            release/steam_api64.dll
+          body: |
+            Barony QOL mod build for tag ${{ github.ref_name }}.
+
+            **How to use:** drop the two files for your OS into your existing Steam Barony install
+            directory (back up the originals first):
+            - Linux: `barony` (run it directly, as `./barony`) and `libsteam_api.so`
+            - Windows: `barony.exe` and `steam_api64.dll`
+
+            The modded build links a newer Steamworks SDK than retail, so the matching
+            `libsteam_api.so` / `steam_api64.dll` must sit next to the executable (it stays
+            backward-compatible with the original game). You must own Barony on Steam. Everyone
+            playing together must run
+            the same modded build (multiplayer is version-gated).
