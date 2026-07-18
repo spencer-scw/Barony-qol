@@ -4131,7 +4131,7 @@ void generatePolyModels(int start, int end, bool forceCacheRebuild)
 			if ( model_cache )
 			{
 				printlog("loading model cache...\n");
-				char polymodelsVersionStr[7] = "v0.0.0";
+				char polymodelsVersionStr[64] = "v0.0.0";  // MOD (QOL): was [7] (assumed vanilla's 6-char "vX.Y.Z"); headroom + explicit null-term below so a longer VERSION can't overrun/print garbage
 				char modelsCacheHeader[7] = "000000";
 				model_cache->read(&modelsCacheHeader, sizeof(char), strlen("BARONY"));
 
@@ -4139,6 +4139,7 @@ void generatePolyModels(int start, int end, bool forceCacheRebuild)
 				{
 					// we're using the new polymodels file.
 					model_cache->read(&polymodelsVersionStr, sizeof(char), strlen(VERSION));
+					polymodelsVersionStr[strlen(VERSION)] = '\0';  // MOD (QOL): read() copies exactly strlen(VERSION) bytes with no terminator
 					printlog("[MODEL CACHE]: Using updated version format %s.", polymodelsVersionStr);
 					if ( strncmp(polymodelsVersionStr, VERSION, strlen(VERSION)) )
 					{

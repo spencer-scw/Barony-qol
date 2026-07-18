@@ -28,11 +28,14 @@
 static const char VERSION[] = "v5.0.2";
 #else
 // MOD (QOL): fork-specific version so modded builds only lobby with each other. The netcode gates
-// multiplayer compatibility solely on this string (net.cpp lobbyPlayerJoinRequest). It MUST be <= 7
-// chars: the join packet only carries 8 bytes for the version (data[48..55]; data[56] is the player
-// index), so a longer string is truncated on the wire and never matches — breaking all joins. "q"
-// (for qol) keeps it distinct from vanilla "v5.0.2" so modded and vanilla clients still refuse to mix.
-static const char VERSION[] = "v5.0.2q";
+// multiplayer compatibility solely on this string (net.cpp lobbyPlayerJoinRequest). Two hard limits:
+//   1. <= 7 chars: the join packet carries only 8 bytes for the version (data[48..55]; data[56] is the
+//      player index), so a longer string is truncated on the wire and never matches — breaking joins.
+//   2. Kept to 6 chars, matching vanilla's "vX.Y.Z" shape/length, because several call sites still
+//      assume that exact format (e.g. the version-number parse in MainMenu reads chars [1],[3],[5]).
+// The trailing "q" (for qol) keeps it distinct from vanilla "v5.0.2" so modded and vanilla clients
+// still refuse to mix.
+static const char VERSION[] = "v5.0.q";
 #endif
 #define GAME_CODE
 
