@@ -9376,11 +9376,9 @@ static std::unordered_map<Uint32, void(*)()> serverPacketHandlers = {
 			Uint32 uid = SDLNet_Read32(&net_packet->data[5]);
 			if ( Entity* cauldron = uidToEntity(uid) )
 			{
-				if ( achievementObserver.playerUids[player] == (Uint32)cauldron->skill[6] )
-				{
-					cauldron->skill[6] = 0;
-					serverUpdateEntitySkill(cauldron, 6);
-				}
+				// MOD (QOL): skill[6] is a per-player occupancy bitmask; clear only this player's bit
+				cauldron->skill[6] &= ~(1 << player);
+				serverUpdateEntitySkill(cauldron, 6);
 			}
 		}
 	} },
@@ -9393,11 +9391,9 @@ static std::unordered_map<Uint32, void(*)()> serverPacketHandlers = {
 			Uint32 uid = SDLNet_Read32(&net_packet->data[5]);
 			if ( Entity* workbench = uidToEntity(uid) )
 			{
-				if ( achievementObserver.playerUids[player] == (Uint32)workbench->skill[6] )
-				{
-					workbench->skill[6] = 0;
-					serverUpdateEntitySkill(workbench, 6);
-				}
+				// MOD (QOL): skill[6] is a per-player occupancy bitmask; clear only this player's bit
+				workbench->skill[6] &= ~(1 << player);
+				serverUpdateEntitySkill(workbench, 6);
 			}
 		}
 	} },
@@ -9410,11 +9406,9 @@ static std::unordered_map<Uint32, void(*)()> serverPacketHandlers = {
 			Uint32 uid = SDLNet_Read32(&net_packet->data[5]);
 			if ( Entity* mailbox = uidToEntity(uid) )
 			{
-				if ( achievementObserver.playerUids[player] == (Uint32)mailbox->skill[6] )
-				{
-					mailbox->skill[6] = 0;
-					serverUpdateEntitySkill(mailbox, 6);
-				}
+				// MOD (QOL): skill[6] is a per-player occupancy bitmask; clear only this player's bit
+				mailbox->skill[6] &= ~(1 << player);
+				serverUpdateEntitySkill(mailbox, 6);
 			}
 		}
 	} },

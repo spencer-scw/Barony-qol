@@ -13949,7 +13949,7 @@ void GenericGUIMenu::TinkerGUI_t::closeTinkerMenu()
 	{
 		if ( Entity* workstation = uidToEntity(parentGUI.workstationEntityUid) )
 		{
-			workstation->skill[6] = 0;
+			workstation->skill[6] &= ~(1 << playernum);  // MOD (QOL): per-player occupancy bitmask; clear only this player's bit
 			serverUpdateEntitySkill(workstation, 6);
 		}
 	}
@@ -16868,7 +16868,7 @@ void GenericGUIMenu::AlchemyGUI_t::closeAlchemyMenu()
 	{
 		if ( Entity* cauldron = uidToEntity(parentGUI.alembicEntityUid) )
 		{
-			cauldron->skill[6] = 0;
+			cauldron->skill[6] &= ~(1 << playernum);  // MOD (QOL): per-player occupancy bitmask; clear only this player's bit
 			serverUpdateEntitySkill(cauldron, 6);
 		}
 	}
@@ -39004,7 +39004,7 @@ void GenericGUIMenu::MailboxGui_t::closeMailMenu()
 	{
 		if ( Entity* mailbox = uidToEntity(parentGUI.mailboxEntityUid) )
 		{
-			mailbox->skill[6] = 0;
+			mailbox->skill[6] &= ~(1 << playernum);  // MOD (QOL): per-player occupancy bitmask; clear only this player's bit
 			serverUpdateEntitySkill(mailbox, 6);
 		}
 	}

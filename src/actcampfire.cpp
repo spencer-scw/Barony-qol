@@ -279,71 +279,50 @@ void actCauldron(Entity* my)
 		return;
 	}
 
-	auto& cauldronInteracting = my->skill[6];
-	Entity* interacting = uidToEntity(cauldronInteracting);
+	// MOD (QOL): skill[6] is a per-player occupancy bitmask (bit i = player i has the alchemy GUI open),
+	// not a single interacting-player UID, so any number of players can use the cauldron concurrently.
+	// The alchemy GUI operates on each player's own inventory, so there's no shared state to race on.
+	auto& cauldronOccupancy = my->skill[6];
 
-	if ( cauldronInteracting > 0 )
+	// auto-close for any occupant who walked out of range or disconnected
+	for ( int i = 0; i < MAXPLAYERS; ++i )
 	{
-		if ( !interacting || (entityDist(interacting, my) > TOUCHRANGE) )
+		if ( !(cauldronOccupancy & (1 << i)) )
 		{
-			int playernum = -1;
-			if ( !interacting )
-			{
-				for ( int i = 0; i < MAXPLAYERS; ++i )
-				{
-					if ( achievementObserver.playerUids[i] == cauldronInteracting )
-					{
-						playernum = i;
-						break;
-					}
-				}
-			}
-			else if ( interacting->behavior == &actPlayer )
-			{
-				playernum = interacting->skill[2];
-			}
-			cauldronInteracting = 0;
+			continue;
+		}
+		Entity* pEntity = players[i]->entity;
+		if ( !pEntity || (entityDist(pEntity, my) > TOUCHRANGE) )
+		{
+			cauldronOccupancy &= ~(1 << i);
 			serverUpdateEntitySkill(my, 6);
-			if ( multiplayer == SERVER && playernum > 0 )
+			if ( multiplayer == SERVER && i > 0 )
 			{
 				strcpy((char*)net_packet->data, "CAUC");
-				net_packet->data[4] = playernum;
+				net_packet->data[4] = i;
 				SDLNet_Write32(my->getUID(), &net_packet->data[5]);
-				net_packet->address.host = net_clients[playernum - 1].host;
-				net_packet->address.port = net_clients[playernum - 1].port;
+				net_packet->address.host = net_clients[i - 1].host;
+				net_packet->address.port = net_clients[i - 1].port;
 				net_packet->len = 9;
-				sendPacketSafe(net_sock, -1, net_packet, playernum - 1);
+				sendPacketSafe(net_sock, -1, net_packet, i - 1);
 			}
-			else if ( multiplayer == SINGLE || playernum == 0 )
+			else if ( multiplayer == SINGLE || i == 0 )
 			{
-				if ( playernum >= 0 && playernum < MAXPLAYERS )
-				{
-					GenericGUI[playernum].alchemyGUI.closeAlchemyMenu();
-				}
+				GenericGUI[i].alchemyGUI.closeAlchemyMenu();
 			}
 		}
 	}
 
-	// using
+	// using: admit any in-range player not already using it (no single-user lock)
 	for ( int i = 0; i < MAXPLAYERS; i++ )
 	{
 		if ( selectedEntity[i] == my || client_selected[i] == my )
 		{
 			if ( inrange[i] && players[i]->entity )
 			{
-				if ( cauldronInteracting != 0 )
+				if ( !(cauldronOccupancy & (1 << i)) )
 				{
-					if ( Entity* interacting = uidToEntity(cauldronInteracting) )
-					{
-						if ( interacting != players[i]->entity )
-						{
-							messagePlayer(i, MESSAGE_INTERACTION, Language::get(6975));
-						}
-					}
-				}
-				else
-				{
-					cauldronInteracting = players[i]->entity->getUID();
+					cauldronOccupancy |= (1 << i);
 					if ( multiplayer == SERVER )
 					{
 						serverUpdateEntitySkill(my, 6);
@@ -362,7 +341,6 @@ void actCauldron(Entity* my)
 						sendPacketSafe(net_sock, -1, net_packet, i - 1);
 					}
 				}
-				break;
 			}
 		}
 	}
@@ -474,71 +452,50 @@ void actWorkbench(Entity* my)
 		return;
 	}
 
-	auto& workbenchInteracting = my->skill[6];
-	Entity* interacting = uidToEntity(workbenchInteracting);
+	// MOD (QOL): skill[6] is a per-player occupancy bitmask (bit i = player i has the tinkering GUI open),
+	// not a single interacting-player UID, so any number of players can use the workbench concurrently.
+	// The tinkering GUI operates on each player's own inventory, so there's no shared state to race on.
+	auto& workbenchOccupancy = my->skill[6];
 
-	if ( workbenchInteracting > 0 )
+	// auto-close for any occupant who walked out of range or disconnected
+	for ( int i = 0; i < MAXPLAYERS; ++i )
 	{
-		if ( !interacting || (entityDist(interacting, my) > TOUCHRANGE) )
+		if ( !(workbenchOccupancy & (1 << i)) )
 		{
-			int playernum = -1;
-			if ( !interacting )
-			{
-				for ( int i = 0; i < MAXPLAYERS; ++i )
-				{
-					if ( achievementObserver.playerUids[i] == workbenchInteracting )
-					{
-						playernum = i;
-						break;
-					}
-				}
-			}
-			else if ( interacting->behavior == &actPlayer )
-			{
-				playernum = interacting->skill[2];
-			}
-			workbenchInteracting = 0;
+			continue;
+		}
+		Entity* pEntity = players[i]->entity;
+		if ( !pEntity || (entityDist(pEntity, my) > TOUCHRANGE) )
+		{
+			workbenchOccupancy &= ~(1 << i);
 			serverUpdateEntitySkill(my, 6);
-			if ( multiplayer == SERVER && playernum > 0 )
+			if ( multiplayer == SERVER && i > 0 )
 			{
 				strcpy((char*)net_packet->data, "WRKC");
-				net_packet->data[4] = playernum;
+				net_packet->data[4] = i;
 				SDLNet_Write32(my->getUID(), &net_packet->data[5]);
-				net_packet->address.host = net_clients[playernum - 1].host;
-				net_packet->address.port = net_clients[playernum - 1].port;
+				net_packet->address.host = net_clients[i - 1].host;
+				net_packet->address.port = net_clients[i - 1].port;
 				net_packet->len = 9;
-				sendPacketSafe(net_sock, -1, net_packet, playernum - 1);
+				sendPacketSafe(net_sock, -1, net_packet, i - 1);
 			}
-			else if ( multiplayer == SINGLE || playernum == 0 )
+			else if ( multiplayer == SINGLE || i == 0 )
 			{
-				if ( playernum >= 0 && playernum < MAXPLAYERS )
-				{
-					GenericGUI[playernum].tinkerGUI.closeTinkerMenu();
-				}
+				GenericGUI[i].tinkerGUI.closeTinkerMenu();
 			}
 		}
 	}
 
-	// using
+	// using: admit any in-range player not already using it (no single-user lock)
 	for ( int i = 0; i < MAXPLAYERS; i++ )
 	{
 		if ( selectedEntity[i] == my || client_selected[i] == my )
 		{
 			if ( inrange[i] && players[i]->entity )
 			{
-				if ( workbenchInteracting != 0 )
+				if ( !(workbenchOccupancy & (1 << i)) )
 				{
-					if ( Entity* interacting = uidToEntity(workbenchInteracting) )
-					{
-						if ( interacting != players[i]->entity )
-						{
-							messagePlayer(i, MESSAGE_INTERACTION, Language::get(6982));
-						}
-					}
-				}
-				else
-				{
-					workbenchInteracting = players[i]->entity->getUID();
+					workbenchOccupancy |= (1 << i);
 					if ( multiplayer == SERVER )
 					{
 						serverUpdateEntitySkill(my, 6);
@@ -557,7 +514,6 @@ void actWorkbench(Entity* my)
 						sendPacketSafe(net_sock, -1, net_packet, i - 1);
 					}
 				}
-				break;
 			}
 		}
 	}
@@ -577,71 +533,50 @@ void actMailbox(Entity* my)
 		return;
 	}
 
-	auto& mailboxInteracting = my->skill[6];
-	Entity* interacting = uidToEntity(mailboxInteracting);
+	// MOD (QOL): skill[6] is a per-player occupancy bitmask (bit i = player i has the mailbox GUI open),
+	// not a single interacting-player UID, so any number of players can use the mailbox concurrently.
+	// The mailbox GUI operates on each player's own inventory, so there's no shared state to race on.
+	auto& mailboxOccupancy = my->skill[6];
 
-	if ( mailboxInteracting > 0 )
+	// auto-close for any occupant who walked out of range or disconnected
+	for ( int i = 0; i < MAXPLAYERS; ++i )
 	{
-		if ( !interacting || (entityDist(interacting, my) > TOUCHRANGE) )
+		if ( !(mailboxOccupancy & (1 << i)) )
 		{
-			int playernum = -1;
-			if ( !interacting )
-			{
-				for ( int i = 0; i < MAXPLAYERS; ++i )
-				{
-					if ( achievementObserver.playerUids[i] == mailboxInteracting )
-					{
-						playernum = i;
-						break;
-					}
-				}
-			}
-			else if ( interacting->behavior == &actPlayer )
-			{
-				playernum = interacting->skill[2];
-			}
-			mailboxInteracting = 0;
+			continue;
+		}
+		Entity* pEntity = players[i]->entity;
+		if ( !pEntity || (entityDist(pEntity, my) > TOUCHRANGE) )
+		{
+			mailboxOccupancy &= ~(1 << i);
 			serverUpdateEntitySkill(my, 6);
-			if ( multiplayer == SERVER && playernum > 0 )
+			if ( multiplayer == SERVER && i > 0 )
 			{
 				strcpy((char*)net_packet->data, "MBXC");
-				net_packet->data[4] = playernum;
+				net_packet->data[4] = i;
 				SDLNet_Write32(my->getUID(), &net_packet->data[5]);
-				net_packet->address.host = net_clients[playernum - 1].host;
-				net_packet->address.port = net_clients[playernum - 1].port;
+				net_packet->address.host = net_clients[i - 1].host;
+				net_packet->address.port = net_clients[i - 1].port;
 				net_packet->len = 9;
-				sendPacketSafe(net_sock, -1, net_packet, playernum - 1);
+				sendPacketSafe(net_sock, -1, net_packet, i - 1);
 			}
-			else if ( multiplayer == SINGLE || playernum == 0 )
+			else if ( multiplayer == SINGLE || i == 0 )
 			{
-				if ( playernum >= 0 && playernum < MAXPLAYERS )
-				{
-					GenericGUI[playernum].mailboxGUI.closeMailMenu();
-				}
+				GenericGUI[i].mailboxGUI.closeMailMenu();
 			}
 		}
 	}
 
-	// using
+	// using: admit any in-range player not already using it (no single-user lock)
 	for ( int i = 0; i < MAXPLAYERS; i++ )
 	{
 		if ( selectedEntity[i] == my || client_selected[i] == my )
 		{
 			if ( inrange[i] && players[i]->entity )
 			{
-				if ( mailboxInteracting != 0 )
+				if ( !(mailboxOccupancy & (1 << i)) )
 				{
-					if ( Entity* interacting = uidToEntity(mailboxInteracting) )
-					{
-						if ( interacting != players[i]->entity )
-						{
-							messagePlayer(i, MESSAGE_INTERACTION, Language::get(6987));
-						}
-					}
-				}
-				else
-				{
-					mailboxInteracting = players[i]->entity->getUID();
+					mailboxOccupancy |= (1 << i);
 					if ( multiplayer == SERVER )
 					{
 						serverUpdateEntitySkill(my, 6);
@@ -660,7 +595,6 @@ void actMailbox(Entity* my)
 						sendPacketSafe(net_sock, -1, net_packet, i - 1);
 					}
 				}
-				break;
 			}
 		}
 	}
